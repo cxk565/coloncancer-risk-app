@@ -221,16 +221,21 @@ if st.button("🚀 Run TabICLv2 Risk Assessment", type="primary"):
                 attribute_names=expected_features
             )
             
-            # ✨ 终极修复：彻底剥离 Explanation 外壳，只提取纯净的 Numpy 数字矩阵！
+            # ✨ 终极修复点1：彻底剥离 Explanation 外壳
             vals_matrix = shap_vals_raw.values if hasattr(shap_vals_raw, 'values') else shap_vals_raw
             
-            # 提取当前单个患者的纯数字 SHAP 数组
-            shap_val_single = vals_matrix[0] if len(vals_matrix.shape) == 2 else vals_matrix
+            # ✨ 终极修复点2：精准维度切片提取正类 1D 数组
+            if len(vals_matrix.shape) == 3:
+                shap_val_single = vals_matrix[0, :, 1]
+            elif len(vals_matrix.shape) == 2:
+                shap_val_single = vals_matrix[0]
+            else:
+                shap_val_single = vals_matrix
             
-            # ✨ 神级Hack：现在 shap_val_single 是纯数字了，np.sum 绝对不会再报错！
+            # ✨ 神级Hack：此时的 shap_val_single 必定是 1D 纯数字矩阵，np.sum 完美执行
             base_val = risk_prob - np.sum(shap_val_single)
             
-            # 用纯数字干净、安全地重新组装 Explanation 对象供画图使用
+            # 用纯数字干净、安全地重新组装单一解释的 Explanation 对象
             exp = shap.Explanation(values=shap_val_single, base_values=base_val, 
                                    data=input_df.iloc[0], feature_names=expected_features)
             
