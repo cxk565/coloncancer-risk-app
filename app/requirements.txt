@@ -1,6 +1,6 @@
 streamlit
 pandas
 numpy
-tabicl[shap]
+git+https://github.com/soda-inria/tabicl.git
 shap
 matplotlib
