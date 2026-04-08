@@ -165,19 +165,25 @@ col5, col6, col7, col8 = st.columns(4)
 with col5:
     st.number_input("FDP (mg/L)", min_value=0.0, max_value=300.0, step=0.01, format="%.2f", key="FDP_num", on_change=sync_inputs, args=("FDP_num", "FDP_slider"))
 
-# 构建精确排序的数据框
-expected_features = ['Age', 'Crea', 'PA', 'GLO', 'Lymph%', 'Lymphocyte count', 'ChE', 'CEA', 'FDP']
+
+# ✨ 核心修复：根据 CSV 截图严格排列表头顺序
+expected_features = ['ChE', 'Age', 'PA', 'Crea', 'FDP', 'Lymph%', 'CEA', 'GLO', 'Lymphocyte count']
+
+# 按照截图顺序将 session_state 填入
 input_df = pd.DataFrame({
-    'Age': [st.session_state["Age_num"]], 
-    'Crea': [st.session_state["Crea_num"]],
-    'PA': [st.session_state["PA_num"]], 
-    'GLO': [st.session_state["GLO_num"]],
-    'Lymph%': [st.session_state["Lymph_pct_num"]], 
-    'Lymphocyte count': [st.session_state["Lymph_count_num"]],
     'ChE': [st.session_state["ChE_num"]], 
+    'Age': [st.session_state["Age_num"]], 
+    'PA': [st.session_state["PA_num"]], 
+    'Crea': [st.session_state["Crea_num"]],
+    'FDP': [st.session_state["FDP_num"]], 
+    'Lymph%': [st.session_state["Lymph_pct_num"]], 
     'CEA': [st.session_state["CEA_num"]], 
-    'FDP': [st.session_state["FDP_num"]] 
+    'GLO': [st.session_state["GLO_num"]],
+    'Lymphocyte count': [st.session_state["Lymph_count_num"]] 
 })
+
+# 强制重排顺序，确保绝对一致
+input_df = input_df[expected_features]
 
 # ==========================================
 # 4. TabICLv2 前向推理与 SHAP 动态解析
@@ -212,7 +218,7 @@ if st.button("🚀 Run TabICLv2 Risk Assessment", type="primary"):
             shap_vals_raw = get_shap_values(
                 estimator=model,
                 X_test=input_df,
-                attribute_names=input_df.columns.tolist()
+                attribute_names=expected_features
             )
             
             shap_val_single = shap_vals_raw[0] if len(shap_vals_raw.shape) == 2 else shap_vals_raw
@@ -221,7 +227,7 @@ if st.button("🚀 Run TabICLv2 Risk Assessment", type="primary"):
             base_val = risk_prob - np.sum(shap_val_single)
             
             exp = shap.Explanation(values=shap_val_single, base_values=base_val, 
-                                   data=input_df.iloc[0], feature_names=input_df.columns.tolist())
+                                   data=input_df.iloc[0], feature_names=expected_features)
             
             tab1, tab2, tab3, tab4 = st.tabs(["🌊 Waterfall Plot", "⚖️ Force Plot", "📈 Decision Plot", "📊 Bar Plot"])
             
