@@ -91,7 +91,7 @@ st.markdown("""
 @st.cache_resource 
 def load_model():
     base_dir = os.path.dirname(os.path.abspath(__file__))
-    model_path = os.path.join(base_dir, "tabicl_model.pkl") # ✨ 读取 TabICLv2 模型
+    model_path = os.path.join(base_dir, "tabicl_model.pkl") 
     
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model file not found: {model_path}")
@@ -221,11 +221,16 @@ if st.button("🚀 Run TabICLv2 Risk Assessment", type="primary"):
                 attribute_names=expected_features
             )
             
-            shap_val_single = shap_vals_raw[0] if len(shap_vals_raw.shape) == 2 else shap_vals_raw
+            # ✨ 终极修复：彻底剥离 Explanation 外壳，只提取纯净的 Numpy 数字矩阵！
+            vals_matrix = shap_vals_raw.values if hasattr(shap_vals_raw, 'values') else shap_vals_raw
             
-            # ✨ 神级Hack：通过 f(x) = base_val + sum(shap) 逆推完美匹配的基准值
+            # 提取当前单个患者的纯数字 SHAP 数组
+            shap_val_single = vals_matrix[0] if len(vals_matrix.shape) == 2 else vals_matrix
+            
+            # ✨ 神级Hack：现在 shap_val_single 是纯数字了，np.sum 绝对不会再报错！
             base_val = risk_prob - np.sum(shap_val_single)
             
+            # 用纯数字干净、安全地重新组装 Explanation 对象供画图使用
             exp = shap.Explanation(values=shap_val_single, base_values=base_val, 
                                    data=input_df.iloc[0], feature_names=expected_features)
             
