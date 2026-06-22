@@ -4,7 +4,8 @@ import numpy as np
 import pickle
 import os
 import sys
-import types
+import importlib
+import pkgutil
 
 # ==========================================
 # 0. Matplotlib 后台设置：必须放在 pyplot 前
@@ -96,32 +97,82 @@ st.markdown("""
 
 
 # ==========================================
-# 4. 模型加载：兼容旧 pickle 里的 tabicl.sklearn
+# 4. 模型加载：兼容旧 pickle 里的 tabicl.sklearn.*
 # ==========================================
+def patch_old_tabicl_sklearn_modules():
+    """
+    解决旧版 pickle 模型中的路径问题：
+    旧路径：tabicl.sklearn.*
+    新路径：tabicl._sklearn.*
+
+    你的 tabicl_model.pkl 是 pickle.dump 保存的，
+    pickle 里会记录旧模块路径，所以这里要在 pickle.load 前做映射。
+    """
+    import tabicl as tabicl_pkg
+
+    try:
+        new_pkg = importlib.import_module("tabicl._sklearn")
+
+        # 让旧的 tabicl.sklearn 指向新的 tabicl._sklearn
+        sys.modules["tabicl.sklearn"] = new_pkg
+        setattr(tabicl_pkg, "sklearn", new_pkg)
+
+        # 自动映射 tabicl._sklearn 下面所有子模块
+        if hasattr(new_pkg, "__path__"):
+            for module_info in pkgutil.walk_packages(
+                new_pkg.__path__,
+                prefix="tabicl._sklearn."
+            ):
+                new_module_name = module_info.name
+                old_module_name = new_module_name.replace(
+                    "tabicl._sklearn",
+                    "tabicl.sklearn",
+                    1
+                )
+
+                try:
+                    sys.modules[old_module_name] = importlib.import_module(new_module_name)
+                except Exception:
+                    pass
+
+    except Exception:
+        # 如果自动映射失败，再做几个常见模块的手动映射
+        manual_map = {
+            "tabicl.sklearn": "tabicl._sklearn",
+            "tabicl.sklearn.preprocessing": "tabicl._sklearn.preprocessing",
+            "tabicl.sklearn.classifier": "tabicl._sklearn.classifier",
+            "tabicl.sklearn.regressor": "tabicl._sklearn.regressor",
+            "tabicl.sklearn.sklearn_utils": "tabicl._sklearn.sklearn_utils",
+            "tabicl.sklearn.utils": "tabicl._sklearn.utils",
+        }
+
+        for old_name, new_name in manual_map.items():
+            try:
+                sys.modules[old_name] = importlib.import_module(new_name)
+            except Exception:
+                pass
+
+
+class TabICLCompatUnpickler(pickle.Unpickler):
+    """
+    进一步兜底：
+    如果 pickle 仍然要求 tabicl.sklearn.xxx，
+    就在 find_class 时重定向到 tabicl._sklearn.xxx。
+    """
+    def find_class(self, module, name):
+        if module.startswith("tabicl.sklearn"):
+            new_module = module.replace("tabicl.sklearn", "tabicl._sklearn", 1)
+            try:
+                return super().find_class(new_module, name)
+            except Exception:
+                pass
+
+        return super().find_class(module, name)
+
+
 @st.cache_resource
 def load_model():
-    import tabicl as tabicl_pkg
-    from tabicl import TabICLClassifier
-
-    # ------------------------------------------------------------
-    # 兼容旧版 pickle：
-    # 旧模型保存时可能记录的是 tabicl.sklearn.TabICLClassifier
-    # 但新版 tabicl 里没有 tabicl.sklearn，所以这里手动创建假模块。
-    # ------------------------------------------------------------
-    fake_sklearn_module = types.ModuleType("tabicl.sklearn")
-    fake_sklearn_module.TabICLClassifier = TabICLClassifier
-
-    fake_classifier_module = types.ModuleType("tabicl.sklearn._classifier")
-    fake_classifier_module.TabICLClassifier = TabICLClassifier
-
-    fake_base_module = types.ModuleType("tabicl.sklearn.classifier")
-    fake_base_module.TabICLClassifier = TabICLClassifier
-
-    sys.modules["tabicl.sklearn"] = fake_sklearn_module
-    sys.modules["tabicl.sklearn._classifier"] = fake_classifier_module
-    sys.modules["tabicl.sklearn.classifier"] = fake_base_module
-
-    setattr(tabicl_pkg, "sklearn", fake_sklearn_module)
+    patch_old_tabicl_sklearn_modules()
 
     base_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(base_dir, "tabicl_model.pkl")
@@ -130,7 +181,7 @@ def load_model():
         raise FileNotFoundError(f"Model file not found: {model_path}")
 
     with open(model_path, "rb") as f:
-        model = pickle.load(f)
+        model = TabICLCompatUnpickler(f).load()
 
     return model
 
