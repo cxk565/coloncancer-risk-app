@@ -1,7 +1,9 @@
 streamlit
 pandas
 numpy
-scikit-learn==1.6.1
-git+https://github.com/soda-inria/tabicl.git
-shap
+scikit-learn
 matplotlib
+shap>=0.42
+shapiq>=1.0
+numba
+tabicl[shap]==2.1.1
