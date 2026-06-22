@@ -25,7 +25,7 @@ from tabicl import TabICLClassifier
 # 2. 页面配置与高级 CSS 美化
 # ==========================================
 st.set_page_config(
-    page_title="Hypoalbuminemia Risk Predictor (TabICLv2)",
+    page_title="Postoperative Protein Depletion Risk Predictor (TabICLv2)",
     page_icon="⚕️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -84,13 +84,13 @@ with col_logo:
     st.image("https://cdn-icons-png.flaticon.com/512/3004/3004458.png", width=80)
 
 with col_title:
-    st.title("Intelligent Warning Platform for Postoperative Hypoalbuminemia Risk in Colon Cancer")
-    st.markdown("**(Powered by TabICLv2: A State-of-the-Art Tabular Foundation Model)**")
+    st.title("Postoperative Protein Depletion Risk Predictor for Colon Cancer Surgery")
+    st.markdown("**Powered by TabICLv2: An Interpretable Tabular Foundation Model**")
 
 st.markdown("""
 <div style='background-color: #EBF5FB; padding: 15px; border-radius: 10px; border-left: 5px solid #2980B9; margin-bottom: 25px;'>
     <span style='color: #154360; font-size: 15px;'>
-    <b>📊 System Introduction:</b> Powered by <b>TabICLv2</b>—an advanced In-Context Learning foundation model—this platform integrates key clinical indicators to dynamically predict the risk of postoperative hypoalbuminemia. It features real-time <b>SHAP (SHapley Additive exPlanations)</b> interpretations, providing clinicians with explainable decision support.
+    <b>📊 System Introduction:</b> Powered by <b>TabICLv2</b>, this platform integrates nine preoperative clinical indicators to estimate the individualised risk of <b>acute postoperative protein depletion</b> after colon cancer surgery. SHAP-based visualisations are provided to support interpretable risk attribution and adjunctive clinical decision-making.
     </span>
 </div>
 """, unsafe_allow_html=True)
@@ -522,7 +522,7 @@ input_df = input_df[expected_features]
 # ==========================================
 if st.button("🚀 Run TabICLv2 Risk Assessment", type="primary"):
 
-    with st.spinner("🧬 In-Context Learning model is analyzing clinical features..."):
+    with st.spinner("🧬 In-Context Learning model is analysing clinical features..."):
 
         # ------------------------------
         # 9.1 模型预测
@@ -532,7 +532,9 @@ if st.button("🚀 Run TabICLv2 Risk Assessment", type="primary"):
             risk_prob = float(risk_prob)
 
         except Exception as e:
-            st.error("模型预测失败。当前变量顺序如下。若变量没问题，则多半是 sklearn pickle 版本兼容问题。")
+            st.error(
+                "模型预测失败。当前变量顺序如下。若变量没问题，则多半是 sklearn pickle 版本兼容问题。"
+            )
             st.write("Current input columns:", list(input_df.columns))
             st.exception(e)
             st.stop()
@@ -547,7 +549,7 @@ if st.button("🚀 Run TabICLv2 Risk Assessment", type="primary"):
 
         with res_col1:
             st.metric(
-                label="Probability of Hypoalbuminemia",
+                label="Probability of Acute Postoperative Protein Depletion",
                 value=f"{risk_prob * 100:.2f} %"
             )
 
@@ -556,26 +558,38 @@ if st.button("🚀 Run TabICLv2 Risk Assessment", type="primary"):
 
             if risk_prob > 0.5:
                 st.error(
-                    "🚨 **[HIGH RISK ALERT]** The model identifies this patient as highly susceptible to "
-                    "**postoperative hypoalbuminemia**. Intensive perioperative nutritional management and "
-                    "enhanced postoperative monitoring are strongly recommended."
+                    "🚨 **[HIGH RISK ALERT]** The model estimates a high risk of "
+                    "**acute postoperative protein depletion**. Closer postoperative biochemical monitoring, "
+                    "early nutritional assessment, and perioperative optimisation may be considered."
                 )
                 st.toast("High-risk alert detected!", icon="⚠️")
             else:
                 st.success(
-                    "✅ **[SAFE ASSESSMENT]** The patient is currently in the low-risk zone. "
-                    "Maintenance of standard postoperative care protocols is recommended."
+                    "✅ **[LOWER RISK ASSESSMENT]** The model estimates a relatively lower risk of "
+                    "acute postoperative protein depletion. Standard postoperative care and routine monitoring "
+                    "may be appropriate according to clinical judgement."
                 )
                 st.balloons()
 
         # ------------------------------
-        # 9.3 SHAP 解释
+        # 9.3 临床说明
+        # ------------------------------
+        st.markdown("""
+        <div style='background-color: #FDFEFE; padding: 12px; border-radius: 8px; border-left: 4px solid #7DCEA0; margin-top: 10px;'>
+            <span style='color: #1E8449; font-size: 14px;'>
+            <b>Clinical Note:</b> This tool is intended for adjunctive preoperative risk stratification in adult patients undergoing elective radical surgery for primary colon cancer. It should not replace clinical judgement or institutional perioperative protocols.
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ------------------------------
+        # 9.4 SHAP 解释
         # ------------------------------
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("### 🧠 Risk Factor Attribution")
+        st.markdown("### 🧠 Individualised Risk Factor Attribution")
         st.info(
-            "💡 **Interpretation Guide:** Red indicates risk-increasing factors, "
-            "while blue indicates protective factors."
+            "💡 **Interpretation Guide:** Positive SHAP values increase the predicted risk, "
+            "whereas negative SHAP values decrease the predicted risk for this individual patient."
         )
 
         try:
