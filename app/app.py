@@ -97,16 +97,13 @@ st.markdown("""
 
 
 # ==========================================
-# 4. 模型加载：兼容旧 pickle 里的 tabicl.sklearn.*
+# 4. 模型加载：兼容旧 pickle + sklearn SimpleImputer
 # ==========================================
 def patch_old_tabicl_sklearn_modules():
     """
-    解决旧版 pickle 模型中的路径问题：
+    解决旧版 pickle 模型中的 TabICL 路径问题：
     旧路径：tabicl.sklearn.*
     新路径：tabicl._sklearn.*
-
-    你的 tabicl_model.pkl 是 pickle.dump 保存的，
-    pickle 里会记录旧模块路径，所以这里要在 pickle.load 前做映射。
     """
     import tabicl as tabicl_pkg
 
@@ -136,7 +133,7 @@ def patch_old_tabicl_sklearn_modules():
                     pass
 
     except Exception:
-        # 如果自动映射失败，再做几个常见模块的手动映射
+        # 自动映射失败时，使用常见模块手动映射
         manual_map = {
             "tabicl.sklearn": "tabicl._sklearn",
             "tabicl.sklearn.preprocessing": "tabicl._sklearn.preprocessing",
@@ -155,7 +152,7 @@ def patch_old_tabicl_sklearn_modules():
 
 class TabICLCompatUnpickler(pickle.Unpickler):
     """
-    进一步兜底：
+    兜底：
     如果 pickle 仍然要求 tabicl.sklearn.xxx，
     就在 find_class 时重定向到 tabicl._sklearn.xxx。
     """
@@ -170,6 +167,63 @@ class TabICLCompatUnpickler(pickle.Unpickler):
         return super().find_class(module, name)
 
 
+def patch_sklearn_pickle_compat(obj):
+    """
+    修复 sklearn 版本不一致导致的旧 pickle 问题。
+
+    当前主要修复：
+    AttributeError: 'SimpleImputer' object has no attribute '_fill_dtype'
+
+    因为本 app 输入全部是数值型临床变量，所以补成 float64 是安全的。
+    """
+    visited = set()
+
+    def walk(x):
+        obj_id = id(x)
+
+        if obj_id in visited:
+            return
+
+        visited.add(obj_id)
+
+        # 1. 修复 SimpleImputer
+        if x.__class__.__name__ == "SimpleImputer":
+            if not hasattr(x, "_fill_dtype"):
+                if hasattr(x, "statistics_") and hasattr(x.statistics_, "dtype"):
+                    x._fill_dtype = x.statistics_.dtype
+                else:
+                    x._fill_dtype = np.dtype("float64")
+
+            if not hasattr(x, "_fit_dtype"):
+                if hasattr(x, "statistics_") and hasattr(x.statistics_, "dtype"):
+                    x._fit_dtype = x.statistics_.dtype
+                else:
+                    x._fit_dtype = np.dtype("float64")
+
+            if not hasattr(x, "keep_empty_features"):
+                x.keep_empty_features = False
+
+        # 2. 遍历 dict
+        if isinstance(x, dict):
+            for v in x.values():
+                walk(v)
+            return
+
+        # 3. 遍历 list / tuple / set
+        if isinstance(x, (list, tuple, set)):
+            for v in x:
+                walk(v)
+            return
+
+        # 4. 遍历普通对象属性
+        if hasattr(x, "__dict__"):
+            for v in vars(x).values():
+                walk(v)
+
+    walk(obj)
+    return obj
+
+
 @st.cache_resource
 def load_model():
     patch_old_tabicl_sklearn_modules()
@@ -182,6 +236,9 @@ def load_model():
 
     with open(model_path, "rb") as f:
         model = TabICLCompatUnpickler(f).load()
+
+    # 关键修复：补 sklearn 旧 pickle 缺失属性
+    model = patch_sklearn_pickle_compat(model)
 
     return model
 
@@ -475,7 +532,7 @@ if st.button("🚀 Run TabICLv2 Risk Assessment", type="primary"):
             risk_prob = float(risk_prob)
 
         except Exception as e:
-            st.error("模型预测失败。请确认 tabicl_model.pkl 训练时使用的变量名和顺序与当前输入一致。")
+            st.error("模型预测失败。当前变量顺序如下。若变量没问题，则多半是 sklearn pickle 版本兼容问题。")
             st.write("Current input columns:", list(input_df.columns))
             st.exception(e)
             st.stop()
