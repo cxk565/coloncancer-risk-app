@@ -1,7 +1,7 @@
 streamlit
 pandas
 numpy
-scikit-learn
+scikit-learn==1.6.1
 matplotlib
 shap>=0.42
 shapiq>=1.0
