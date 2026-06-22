@@ -3,18 +3,25 @@ import pandas as pd
 import numpy as np
 import pickle
 import os
+import sys
+import types
 
-# 强制后台绘图：必须放在 pyplot 前
+# ==========================================
+# 0. Matplotlib 后台设置：必须放在 pyplot 前
+# ==========================================
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-# 只导入 TabICL 核心，不在启动阶段导入 tabicl.shap
+# ==========================================
+# 1. TabICL 核心导入
+# 注意：这里不要导入 tabicl.shap
+# ==========================================
 from tabicl import TabICLClassifier
 
 
 # ==========================================
-# 0. 页面配置与高级 CSS 美化
+# 2. 页面配置与高级 CSS 美化
 # ==========================================
 st.set_page_config(
     page_title="Hypoalbuminemia Risk Predictor (TabICLv2)",
@@ -68,7 +75,7 @@ st.markdown("""
 
 
 # ==========================================
-# 1. 头部设计
+# 3. 头部设计
 # ==========================================
 col_logo, col_title = st.columns([1, 8])
 
@@ -89,10 +96,33 @@ st.markdown("""
 
 
 # ==========================================
-# 2. 模型加载
+# 4. 模型加载：兼容旧 pickle 里的 tabicl.sklearn
 # ==========================================
 @st.cache_resource
 def load_model():
+    import tabicl as tabicl_pkg
+    from tabicl import TabICLClassifier
+
+    # ------------------------------------------------------------
+    # 兼容旧版 pickle：
+    # 旧模型保存时可能记录的是 tabicl.sklearn.TabICLClassifier
+    # 但新版 tabicl 里没有 tabicl.sklearn，所以这里手动创建假模块。
+    # ------------------------------------------------------------
+    fake_sklearn_module = types.ModuleType("tabicl.sklearn")
+    fake_sklearn_module.TabICLClassifier = TabICLClassifier
+
+    fake_classifier_module = types.ModuleType("tabicl.sklearn._classifier")
+    fake_classifier_module.TabICLClassifier = TabICLClassifier
+
+    fake_base_module = types.ModuleType("tabicl.sklearn.classifier")
+    fake_base_module.TabICLClassifier = TabICLClassifier
+
+    sys.modules["tabicl.sklearn"] = fake_sklearn_module
+    sys.modules["tabicl.sklearn._classifier"] = fake_classifier_module
+    sys.modules["tabicl.sklearn.classifier"] = fake_base_module
+
+    setattr(tabicl_pkg, "sklearn", fake_sklearn_module)
+
     base_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(base_dir, "tabicl_model.pkl")
 
@@ -108,12 +138,16 @@ def load_model():
 try:
     model = load_model()
 except Exception as e:
-    st.error(f"🚨 Model loading failed. Please ensure 'tabicl_model.pkl' is uploaded. Error details: {e}")
+    st.error(
+        "🚨 Model loading failed. Please ensure 'tabicl_model.pkl' is uploaded. "
+        f"Error details: {e}"
+    )
+    st.exception(e)
     st.stop()
 
 
 # ==========================================
-# 3. 输入变量
+# 5. 输入变量默认值
 # ==========================================
 default_values = {
     "ChE": 6664.0,
@@ -138,56 +172,215 @@ def sync_inputs(src_key, dest_key):
     st.session_state[dest_key] = st.session_state[src_key]
 
 
+# ==========================================
+# 6. 侧边栏输入
+# ==========================================
 st.sidebar.markdown("### 🖥️ System Status")
 st.sidebar.success("🟢 Core Engine: TabICLv2 Ready")
 st.sidebar.markdown("---")
 st.sidebar.markdown("### 🎛️ Rapid Parameter Adjustment")
 
 with st.sidebar.expander("👤 Demographics & Hepatorenal", expanded=True):
-    st.slider("Age (Months)", 200.0, 1300.0, step=1.0, key="Age_slider", on_change=sync_inputs, args=("Age_slider", "Age_num"))
-    st.slider("Creatinine (Crea) μmol/L", 10.0, 1200.0, step=0.1, key="Crea_slider", on_change=sync_inputs, args=("Crea_slider", "Crea_num"))
-    st.slider("Prealbumin (PA) mg/L", 10.0, 800.0, step=1.0, key="PA_slider", on_change=sync_inputs, args=("PA_slider", "PA_num"))
-    st.slider("Globulin (GLO) g/L", 10.0, 120.0, step=0.1, key="GLO_slider", on_change=sync_inputs, args=("GLO_slider", "GLO_num"))
+    st.slider(
+        "Age (Months)",
+        200.0,
+        1300.0,
+        step=1.0,
+        key="Age_slider",
+        on_change=sync_inputs,
+        args=("Age_slider", "Age_num")
+    )
+    st.slider(
+        "Creatinine (Crea) μmol/L",
+        10.0,
+        1200.0,
+        step=0.1,
+        key="Crea_slider",
+        on_change=sync_inputs,
+        args=("Crea_slider", "Crea_num")
+    )
+    st.slider(
+        "Prealbumin (PA) mg/L",
+        10.0,
+        800.0,
+        step=1.0,
+        key="PA_slider",
+        on_change=sync_inputs,
+        args=("PA_slider", "PA_num")
+    )
+    st.slider(
+        "Globulin (GLO) g/L",
+        10.0,
+        120.0,
+        step=0.1,
+        key="GLO_slider",
+        on_change=sync_inputs,
+        args=("GLO_slider", "GLO_num")
+    )
 
 with st.sidebar.expander("🩸 Hematological Indices", expanded=True):
-    st.slider("Lymphocyte Percentage (Lymph%)", 0.0, 100.0, step=0.1, key="Lymph_pct_slider", on_change=sync_inputs, args=("Lymph_pct_slider", "Lymph_pct_num"))
-    st.slider("Lymphocyte Count (×10^9/L)", 0.0, 50.0, step=0.01, key="Lymph_count_slider", on_change=sync_inputs, args=("Lymph_count_slider", "Lymph_count_num"))
-    st.slider("Fibrin Degradation Products (FDP) mg/L", 0.0, 300.0, step=0.01, key="FDP_slider", on_change=sync_inputs, args=("FDP_slider", "FDP_num"))
+    st.slider(
+        "Lymphocyte Percentage (Lymph%)",
+        0.0,
+        100.0,
+        step=0.1,
+        key="Lymph_pct_slider",
+        on_change=sync_inputs,
+        args=("Lymph_pct_slider", "Lymph_pct_num")
+    )
+    st.slider(
+        "Lymphocyte Count (×10^9/L)",
+        0.0,
+        50.0,
+        step=0.01,
+        key="Lymph_count_slider",
+        on_change=sync_inputs,
+        args=("Lymph_count_slider", "Lymph_count_num")
+    )
+    st.slider(
+        "Fibrin Degradation Products (FDP) mg/L",
+        0.0,
+        300.0,
+        step=0.01,
+        key="FDP_slider",
+        on_change=sync_inputs,
+        args=("FDP_slider", "FDP_num")
+    )
 
 with st.sidebar.expander("🔬 Specific Enzymes & Markers", expanded=True):
-    st.slider("Cholinesterase (ChE) U/L", 100.0, 25000.0, step=10.0, key="ChE_slider", on_change=sync_inputs, args=("ChE_slider", "ChE_num"))
-    st.slider("Carcinoembryonic Antigen (CEA) ng/mL", 0.0, 5000.0, step=0.1, key="CEA_slider", on_change=sync_inputs, args=("CEA_slider", "CEA_num"))
+    st.slider(
+        "Cholinesterase (ChE) U/L",
+        100.0,
+        25000.0,
+        step=10.0,
+        key="ChE_slider",
+        on_change=sync_inputs,
+        args=("ChE_slider", "ChE_num")
+    )
+    st.slider(
+        "Carcinoembryonic Antigen (CEA) ng/mL",
+        0.0,
+        5000.0,
+        step=0.1,
+        key="CEA_slider",
+        on_change=sync_inputs,
+        args=("CEA_slider", "CEA_num")
+    )
 
 
+# ==========================================
+# 7. 主界面输入
+# ==========================================
 st.markdown("### 👨‍⚕️ Clinical Parameter Input Matrix")
 st.markdown("*(Enter exact values below, or use the sidebar sliders to adjust synchronously)*")
 
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    st.number_input("Age (Months)", min_value=200.0, max_value=1300.0, step=1.0, format="%.0f", key="Age_num", on_change=sync_inputs, args=("Age_num", "Age_slider"))
-    st.number_input("Crea (μmol/L)", min_value=10.0, max_value=1200.0, step=0.1, format="%.1f", key="Crea_num", on_change=sync_inputs, args=("Crea_num", "Crea_slider"))
+    st.number_input(
+        "Age (Months)",
+        min_value=200.0,
+        max_value=1300.0,
+        step=1.0,
+        format="%.0f",
+        key="Age_num",
+        on_change=sync_inputs,
+        args=("Age_num", "Age_slider")
+    )
+    st.number_input(
+        "Crea (μmol/L)",
+        min_value=10.0,
+        max_value=1200.0,
+        step=0.1,
+        format="%.1f",
+        key="Crea_num",
+        on_change=sync_inputs,
+        args=("Crea_num", "Crea_slider")
+    )
 
 with col2:
-    st.number_input("PA (mg/L)", min_value=10.0, max_value=800.0, step=1.0, format="%.1f", key="PA_num", on_change=sync_inputs, args=("PA_num", "PA_slider"))
-    st.number_input("GLO (g/L)", min_value=10.0, max_value=120.0, step=0.1, format="%.1f", key="GLO_num", on_change=sync_inputs, args=("GLO_num", "GLO_slider"))
+    st.number_input(
+        "PA (mg/L)",
+        min_value=10.0,
+        max_value=800.0,
+        step=1.0,
+        format="%.1f",
+        key="PA_num",
+        on_change=sync_inputs,
+        args=("PA_num", "PA_slider")
+    )
+    st.number_input(
+        "GLO (g/L)",
+        min_value=10.0,
+        max_value=120.0,
+        step=0.1,
+        format="%.1f",
+        key="GLO_num",
+        on_change=sync_inputs,
+        args=("GLO_num", "GLO_slider")
+    )
 
 with col3:
-    st.number_input("Lymph (%)", min_value=0.0, max_value=100.0, step=0.1, format="%.1f", key="Lymph_pct_num", on_change=sync_inputs, args=("Lymph_pct_num", "Lymph_pct_slider"))
-    st.number_input("Lymph Count", min_value=0.0, max_value=50.0, step=0.01, format="%.2f", key="Lymph_count_num", on_change=sync_inputs, args=("Lymph_count_num", "Lymph_count_slider"))
+    st.number_input(
+        "Lymph (%)",
+        min_value=0.0,
+        max_value=100.0,
+        step=0.1,
+        format="%.1f",
+        key="Lymph_pct_num",
+        on_change=sync_inputs,
+        args=("Lymph_pct_num", "Lymph_pct_slider")
+    )
+    st.number_input(
+        "Lymph Count",
+        min_value=0.0,
+        max_value=50.0,
+        step=0.01,
+        format="%.2f",
+        key="Lymph_count_num",
+        on_change=sync_inputs,
+        args=("Lymph_count_num", "Lymph_count_slider")
+    )
 
 with col4:
-    st.number_input("ChE (U/L)", min_value=100.0, max_value=25000.0, step=10.0, format="%.0f", key="ChE_num", on_change=sync_inputs, args=("ChE_num", "ChE_slider"))
-    st.number_input("CEA (ng/mL)", min_value=0.0, max_value=5000.0, step=0.1, format="%.2f", key="CEA_num", on_change=sync_inputs, args=("CEA_num", "CEA_slider"))
+    st.number_input(
+        "ChE (U/L)",
+        min_value=100.0,
+        max_value=25000.0,
+        step=10.0,
+        format="%.0f",
+        key="ChE_num",
+        on_change=sync_inputs,
+        args=("ChE_num", "ChE_slider")
+    )
+    st.number_input(
+        "CEA (ng/mL)",
+        min_value=0.0,
+        max_value=5000.0,
+        step=0.1,
+        format="%.2f",
+        key="CEA_num",
+        on_change=sync_inputs,
+        args=("CEA_num", "CEA_slider")
+    )
 
 col5, col6, col7, col8 = st.columns(4)
 
 with col5:
-    st.number_input("FDP (mg/L)", min_value=0.0, max_value=300.0, step=0.01, format="%.2f", key="FDP_num", on_change=sync_inputs, args=("FDP_num", "FDP_slider"))
+    st.number_input(
+        "FDP (mg/L)",
+        min_value=0.0,
+        max_value=300.0,
+        step=0.01,
+        format="%.2f",
+        key="FDP_num",
+        on_change=sync_inputs,
+        args=("FDP_num", "FDP_slider")
+    )
 
 
 # ==========================================
-# 4. 严格按照模型训练时的 9 个变量顺序构建输入
+# 8. 构建输入矩阵：严格保持训练时变量顺序
 # ==========================================
 expected_features = [
     "ChE",
@@ -217,19 +410,28 @@ input_df = input_df[expected_features]
 
 
 # ==========================================
-# 5. TabICLv2 前向推理与 SHAP 动态解析
+# 9. 预测与解释
 # ==========================================
 if st.button("🚀 Run TabICLv2 Risk Assessment", type="primary"):
+
     with st.spinner("🧬 In-Context Learning model is analyzing clinical features..."):
 
+        # ------------------------------
+        # 9.1 模型预测
+        # ------------------------------
         try:
             risk_prob = model.predict_proba(input_df)[0][1]
+            risk_prob = float(risk_prob)
+
         except Exception as e:
             st.error("模型预测失败。请确认 tabicl_model.pkl 训练时使用的变量名和顺序与当前输入一致。")
             st.write("Current input columns:", list(input_df.columns))
             st.exception(e)
             st.stop()
 
+        # ------------------------------
+        # 9.2 显示预测结果
+        # ------------------------------
         st.markdown("---")
         st.markdown("### 🎯 Postoperative Risk Inference Report")
 
@@ -258,15 +460,18 @@ if st.button("🚀 Run TabICLv2 Risk Assessment", type="primary"):
                 )
                 st.balloons()
 
+        # ------------------------------
+        # 9.3 SHAP 解释
+        # ------------------------------
         st.markdown("<br>", unsafe_allow_html=True)
-        st.markdown("### 🧠 Risk Factor Attribution (TabICLv2 Native SHAP)")
+        st.markdown("### 🧠 Risk Factor Attribution")
         st.info(
-            "💡 **Interpretation Guide:** Explore different tabs to view the explanations. "
-            "Red color indicates risk-increasing factors, while blue indicates protective factors."
+            "💡 **Interpretation Guide:** Red indicates risk-increasing factors, "
+            "while blue indicates protective factors."
         )
 
         try:
-            # 关键修复：SHAP 和 tabicl.shap 放到按钮内部再导入
+            # 关键：延迟导入，防止 app 启动时因 SHAP 失败而崩溃
             import shap
             from tabicl.shap import get_shap_values
 
